@@ -114,7 +114,6 @@ public class HDF5ImageJ
   static void recursiveGetInfo(IHDF5Reader reader, HDF5LinkInformation link, ArrayList<DataSetInfo> dataSets)
   {
     List<HDF5LinkInformation> members = reader.object().getGroupMemberInformation(link.getPath(), true);
-    //    DefaultMutableTreeNode node = new DefaultMutableTreeNode(link.getName());
 
     for (HDF5LinkInformation info : members)
     {
@@ -157,19 +156,16 @@ public class HDF5ImageJ
 
           IJ.log(info.getPath() + ":" + dsInfo);
 
-          dataSets.add( new DataSetInfo( info.getPath(), dimText, typeText,
-                  element_size_um_text));
+          dataSets.add( new DataSetInfo( info.getPath(), dimText, typeText, element_size_um_text));
 
 
           break;
         case SOFT_LINK:
           IJ.log(info.getPath() + "     -> " + info.tryGetSymbolicLinkTarget());
-          //      node.add(new DefaultMutableTreeNode(info.getName() + "     -> " + info.tryGetSymbolicLinkTarget()));
 
           break;
         case GROUP:
-          recursiveGetInfo( reader, info);
-          //        node.add( browse(reader,info));
+          recursiveGetInfo( reader, info, dataSets);
 
           break;
         default:
