@@ -27,435 +27,208 @@
 
 package sc.fiji.hdf5;
 
-import ch.systemsx.cisd.base.mdarray.MDByteArray;
-import ch.systemsx.cisd.base.mdarray.MDFloatArray;
-import ch.systemsx.cisd.base.mdarray.MDShortArray;
 import ch.systemsx.cisd.hdf5.*;
-import ij.IJ;
-import ij.ImagePlus;
-import ij.process.ImageProcessor;
 import ncsa.hdf.hdf5lib.exceptions.HDF5Exception;
 import net.imagej.Dataset;
-import net.imagej.DefaultDataset;
+import net.imagej.DatasetService;
+import net.imagej.ImageJ;
+import net.imagej.ImageJService;
+import net.imglib2.img.Img;
+import net.imglib2.img.array.ArrayImg;
+import net.imglib2.img.basictypeaccess.array.*;
+import net.imglib2.type.numeric.integer.*;
+import net.imglib2.type.numeric.real.DoubleType;
+import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.Fraction;
+import org.scijava.plugin.Parameter;
+import org.scijava.plugin.Plugin;
+import org.scijava.service.AbstractService;
+import org.scijava.service.Service;
+
+import java.io.File;
+
+@Plugin(type=Service.class)
+public class HDF5ImageJ2 extends AbstractService implements ImageJService {
+
+    @Parameter
+    private DatasetService datasetService;
 
 
-public class HDF5ImageJ2 {
-
-    public static Dataset hdf5read(String filename, String[] datasets, int nFrames, int nChannels)
+    public Dataset read(String filename, String dataset)
     {
-        return loadDataset( filename, datasets, nFrames, nChannels);
+        return readDataset(filename, dataset);
     }
 
-    public static Dataset hdf5read( String filename, String[] datasets, String layout)
+    public Dataset read(String filename, String[] datasets)
     {
-        return loadDataset( filename, datasets, layout);
+        return readDataset(filename, datasets[0]);
     }
 
-    static Dataset loadDataset(String filename, String dataset)
+    public Dataset read(String filename, String[] datasets, int nFrames, int nChannels)
     {
+        return readDataset(filename, datasets[0]);
+    }
+
+    public Dataset read( String filename, String[] datasets, String layout)
+    {
+        return readDataset(filename, datasets[0]);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Dataset readDataset(String filename, String dataset)
+    {
+        IHDF5ReaderConfigurator conf = HDF5Factory.configureForReading(filename);
+        conf.performNumericConversions();
+        IHDF5Reader reader = conf.reader();
+
+        float[] element_size_um = {1,1,1};
         try {
-            IHDF5ReaderConfigurator conf = HDF5Factory.configureForReading(filename);
-            conf.performNumericConversions();
-            IHDF5Reader reader = conf.reader();
-            ImagePlus imp = null;
-            int dimensions = 0;
-            int slices     = 0;
-            int rows       = 0;
-            int columns    = 0;
-            boolean isRGB  = false;
-            int bitdepth   = 0;
-            double maxGray = 1;
-            String typeText = "";
-
-            // load data set
-            //
-            IJ.showStatus( "Loading " + dataset);
-            HDF5DataSetInformation dsInfo = reader.object().getDataSetInformation(dataset);
-            float[] element_size_um = {1,1,1};
-            try {
-                element_size_um = reader.float32().getArrayAttr(dataset, "element_size_um");
-            }
-            catch (HDF5Exception err) {
-                IJ.log("Warning: Can't read attribute 'element_size_um' from file '" + filename
-                        + "', dataset '" + dataset + "':\n"
-                        + err + "\n"
-                        + "Assuming element size of 1 x 1 x 1 um^3");
-            }
-
-            // in first call create hyperstack
-            //
-            if (imp == null) {
-                dimensions = dsInfo.getRank();
-                typeText = dsInfoToTypeString(dsInfo);
-                if (dimensions == 2) {
-                    slices = 1;
-                    rows = (int)dsInfo.getDimensions()[0];
-                    columns = (int)dsInfo.getDimensions()[1];
-                } else if (dimensions == 3) {
-                    slices  = (int)dsInfo.getDimensions()[0];
-                    rows    = (int)dsInfo.getDimensions()[1];
-                    columns = (int)dsInfo.getDimensions()[2];
-                    if( typeText.equals( "uint8") && columns == 3)
-                    {
-                        slices  = 1;
-                        rows    = (int)dsInfo.getDimensions()[0];
-                        columns = (int)dsInfo.getDimensions()[1];
-                        isRGB   = true;
-                    }
-                } else if (dimensions == 4 && typeText.equals( "uint8")) {
-                    slices  = (int)dsInfo.getDimensions()[0];
-                    rows    = (int)dsInfo.getDimensions()[1];
-                    columns = (int)dsInfo.getDimensions()[2];
-                    isRGB   = true;
-                } else {
-                    IJ.error( dataset + ": rank " + dimensions + " of type " + typeText + " not supported (yet)");
-                    return null;
-                }
-
-                bitdepth = assignHDF5TypeToImagePlusBitdepth( typeText, isRGB);
-
-
-
-                imp = IJ.createHyperStack( filename + ": " + dataset,
-                        columns, rows, 1, slices, 1, bitdepth);
-                imp.getCalibration().pixelDepth  = element_size_um[0];
-                imp.getCalibration().pixelHeight = element_size_um[1];
-                imp.getCalibration().pixelWidth  = element_size_um[2];
-                imp.getCalibration().setUnit("micrometer");
-                imp.setDisplayRange(0,255);
-            }
-
-            // copy slices to hyperstack
-            int sliceSize = columns * rows;
-
-            if (typeText.equals( "uint8") && isRGB == false) {
-                MDByteArray rawdata = reader.uint8().readMDArray(dataset);
-                for( int lev = 0; lev < slices; ++lev) {
-                    ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                            1, lev+1, 1));
-                    System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                            (byte[])ip.getPixels(),   0,
-                            sliceSize);
-                }
-                maxGray = 255;
-            }  else if (typeText.equals( "uint8") && isRGB) {  // RGB data
-                MDByteArray rawdata = reader.uint8().readMDArray(dataset);
-                byte[] srcArray = rawdata.getAsFlatArray();
-
-
-                for( int lev = 0; lev < slices; ++lev) {
-                    ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                            1, lev+1, 1));
-                    int[] trgArray = (int[])ip.getPixels();
-                    int srcOffset = lev*sliceSize*3;
-
-                    for( int rc = 0; rc < sliceSize; ++rc)
-                    {
-                        int red   = srcArray[srcOffset + rc*3] & 0xff;
-                        int green = srcArray[srcOffset + rc*3 + 1] & 0xff;
-                        int blue  = srcArray[srcOffset + rc*3 + 2] & 0xff;
-                        trgArray[rc] = (red<<16) + (green<<8) + blue;
-                    }
-
-                }
-                maxGray = 255;
-
-            } else if (typeText.equals( "uint16")) {
-                MDShortArray rawdata = reader.uint16().readMDArray(dataset);
-                for( int lev = 0; lev < slices; ++lev) {
-                    ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                            1, lev+1, 1));
-                    System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                            (short[])ip.getPixels(),   0,
-                            sliceSize);
-                }
-                short[] data = rawdata.getAsFlatArray();
-                for (int i = 0; i < data.length; ++i) {
-                    if (data[i] > maxGray) maxGray = data[i];
-                }
-            } else if (typeText.equals( "int16")) {
-                MDShortArray rawdata = reader.int16().readMDArray(dataset);
-                for( int lev = 0; lev < slices; ++lev) {
-                    ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                            1, lev+1, 1));
-                    System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                            (short[])ip.getPixels(),   0,
-                            sliceSize);
-                }
-                short[] data = rawdata.getAsFlatArray();
-                for (int i = 0; i < data.length; ++i) {
-                    if (data[i] > maxGray) maxGray = data[i];
-                }
-            } else if (typeText.equals( "float32") || typeText.equals( "float64") ) {
-                MDFloatArray rawdata = reader.float32().readMDArray(dataset);
-                for( int lev = 0; lev < slices; ++lev) {
-                    ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                            1, lev+1, 1));
-                    System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                            (float[])ip.getPixels(),   0,
-                            sliceSize);
-                }
-                float[] data = rawdata.getAsFlatArray();
-                for (int i = 0; i < data.length; ++i) {
-                    if (data[i] > maxGray) maxGray = data[i];
-                }
-            }
-
-            reader.close();
+            element_size_um = reader.float32().getArrayAttr(dataset, "element_size_um");
         }
+        catch (HDF5Exception err) {}
+        
+        Img img = createImage(reader, dataset);
+        reader.close();
 
-        catch (HDF5Exception err)
-        {
-            IJ.error("Error while opening '" + filename
-                    + "', dataset '" + dataset + "':\n"
-                    + err);
-        }
-        catch (Exception err)
-        {
-            IJ.error("Error while opening '" + filename
-                    + "', dataset '" + dataset + "':\n"
-                    + err);
-        }
-        catch (OutOfMemoryError o)
-        {
-            IJ.outOfMemory("Load HDF5");
-        }
-        //return null;
+        Dataset ds = datasetService.create(img);
 
-        return new DefaultDataset(null, null);
+        return ds;
     }
 
-    static Dataset loadDataset(String filename, String[] datasets, int nFrames, int nChannels)
+    private Img<?> createImage(IHDF5Reader reader, String dataset)
     {
-        String dsetName = "";
-        try {
-            IHDF5ReaderConfigurator conf = HDF5Factory.configureForReading(filename);
-            conf.performNumericConversions();
-            IHDF5Reader reader = conf.reader();
-            ImagePlus imp = null;
-            int rank      = 0;
-            int nLevels   = 0;
-            int nRows     = 0;
-            int nCols     = 0;
-            boolean isRGB = false;
-            int nBits     = 0;
-            double maxGray = 1;
-            String typeText = "";
-            for (int frame = 0; frame < nFrames; ++frame) {
-                for (int channel = 0; channel < nChannels; ++channel) {
-                    // load data set
-                    //
-                    dsetName = datasets[frame*nChannels+channel];
-                    IJ.showStatus( "Loading " + dsetName);
-                    IJ.showProgress( frame*nChannels+channel+1, nFrames*nChannels);
-                    HDF5DataSetInformation dsInfo = reader.object().getDataSetInformation(dsetName);
-                    float[] element_size_um = {1,1,1};
-                    try {
-                        element_size_um = reader.float32().getArrayAttr(dsetName, "element_size_um");
-                    }
-                    catch (HDF5Exception err) {
-                        IJ.log("Warning: Can't read attribute 'element_size_um' from file '" + filename
-                                + "', dataset '" + dsetName + "':\n"
-                                + err + "\n"
-                                + "Assuming element size of 1 x 1 x 1 um^3");
-                    }
-
-                    // in first call create hyperstack
-                    //
-                    if (imp == null) {
-                        rank = dsInfo.getRank();
-                        typeText = dsInfoToTypeString(dsInfo);
-                        if (rank == 2) {
-                            nLevels = 1;
-                            nRows = (int)dsInfo.getDimensions()[0];
-                            nCols = (int)dsInfo.getDimensions()[1];
-                        } else if (rank == 3) {
-                            nLevels = (int)dsInfo.getDimensions()[0];
-                            nRows   = (int)dsInfo.getDimensions()[1];
-                            nCols   = (int)dsInfo.getDimensions()[2];
-                            if( typeText.equals( "uint8") && nCols == 3)
-                            {
-                                nLevels = 1;
-                                nRows = (int)dsInfo.getDimensions()[0];
-                                nCols = (int)dsInfo.getDimensions()[1];
-                                isRGB = true;
-                            }
-                        } else if (rank == 4 && typeText.equals( "uint8")) {
-                            nLevels = (int)dsInfo.getDimensions()[0];
-                            nRows   = (int)dsInfo.getDimensions()[1];
-                            nCols   = (int)dsInfo.getDimensions()[2];
-                            isRGB   = true;
-                        } else {
-                            IJ.error( dsetName + ": rank " + rank + " of type " + typeText + " not supported (yet)");
-                            return null;
-                        }
-
-                        nBits = assignHDF5TypeToImagePlusBitdepth( typeText, isRGB);
-
-
-                        imp = IJ.createHyperStack( filename + ": " + dsetName,
-                                nCols, nRows, nChannels, nLevels, nFrames, nBits);
-                        imp.getCalibration().pixelDepth  = element_size_um[0];
-                        imp.getCalibration().pixelHeight = element_size_um[1];
-                        imp.getCalibration().pixelWidth  = element_size_um[2];
-                        imp.getCalibration().setUnit("micrometer");
-                        imp.setDisplayRange(0,255);
-                    }
-
-                    // copy slices to hyperstack
-                    int sliceSize = nCols * nRows;
-
-                    if (typeText.equals( "uint8") && isRGB == false) {
-                        MDByteArray rawdata = reader.uint8().readMDArray(dsetName);
-                        for( int lev = 0; lev < nLevels; ++lev) {
-                            ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                                    channel+1, lev+1, frame+1));
-                            System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                                    (byte[])ip.getPixels(),   0,
-                                    sliceSize);
-                        }
-                        maxGray = 255;
-                    }  else if (typeText.equals( "uint8") && isRGB) {  // RGB data
-                        MDByteArray rawdata = reader.uint8().readMDArray(dsetName);
-                        byte[] srcArray = rawdata.getAsFlatArray();
-
-
-                        for( int lev = 0; lev < nLevels; ++lev) {
-                            ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                                    channel+1, lev+1, frame+1));
-                            int[] trgArray = (int[])ip.getPixels();
-                            int srcOffset = lev*sliceSize*3;
-
-                            for( int rc = 0; rc < sliceSize; ++rc)
-                            {
-                                int red   = srcArray[srcOffset + rc*3] & 0xff;
-                                int green = srcArray[srcOffset + rc*3 + 1] & 0xff;
-                                int blue  = srcArray[srcOffset + rc*3 + 2] & 0xff;
-                                trgArray[rc] = (red<<16) + (green<<8) + blue;
-                            }
-
-                        }
-                        maxGray = 255;
-
-                    } else if (typeText.equals( "uint16")) {
-                        MDShortArray rawdata = reader.uint16().readMDArray(dsetName);
-                        for( int lev = 0; lev < nLevels; ++lev) {
-                            ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                                    channel+1, lev+1, frame+1));
-                            System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                                    (short[])ip.getPixels(),   0,
-                                    sliceSize);
-                        }
-                        short[] data = rawdata.getAsFlatArray();
-                        for (int i = 0; i < data.length; ++i) {
-                            if (data[i] > maxGray) maxGray = data[i];
-                        }
-                    } else if (typeText.equals( "int16")) {
-                        MDShortArray rawdata = reader.int16().readMDArray(dsetName);
-                        for( int lev = 0; lev < nLevels; ++lev) {
-                            ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                                    channel+1, lev+1, frame+1));
-                            System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                                    (short[])ip.getPixels(),   0,
-                                    sliceSize);
-                        }
-                        short[] data = rawdata.getAsFlatArray();
-                        for (int i = 0; i < data.length; ++i) {
-                            if (data[i] > maxGray) maxGray = data[i];
-                        }
-                    } else if (typeText.equals( "float32") || typeText.equals( "float64") ) {
-                        MDFloatArray rawdata = reader.float32().readMDArray(dsetName);
-                        for( int lev = 0; lev < nLevels; ++lev) {
-                            ImageProcessor ip = imp.getStack().getProcessor( imp.getStackIndex(
-                                    channel+1, lev+1, frame+1));
-                            System.arraycopy( rawdata.getAsFlatArray(), lev*sliceSize,
-                                    (float[])ip.getPixels(),   0,
-                                    sliceSize);
-                        }
-                        float[] data = rawdata.getAsFlatArray();
-                        for (int i = 0; i < data.length; ++i) {
-                            if (data[i] > maxGray) maxGray = data[i];
-                        }
-                    }
-                }
-            }
-            reader.close();
-
-            // aqdjust max gray
-            for( int c = 1; c <= nChannels; ++c)
-            {
-                imp.setC(c);
-                imp.setDisplayRange(0,maxGray);
-            }
-
-            imp.setC(1);
-        }
-
-        catch (HDF5Exception err)
-        {
-            IJ.error("Error while opening '" + filename
-                    + "', dataset '" + dsetName + "':\n"
-                    + err);
-        }
-        catch (Exception err)
-        {
-            IJ.error("Error while opening '" + filename
-                    + "', dataset '" + dsetName + "':\n"
-                    + err);
-        }
-        catch (OutOfMemoryError o)
-        {
-            IJ.outOfMemory("Load HDF5");
-        }
-        //return null;
-
-        return new DefaultDataset(null, null);
-    }
-
-    static Dataset loadDataset( String filename, String[] datasets, String layout)
-    {
-        return new DefaultDataset(null, null);
-    }
-
-    //-----------------------------------------------------------------------------
-    static int assignHDF5TypeToImagePlusBitdepth( String type, boolean isRGB) {
-        int nBits = 0;
-        if (type.equals("uint8")) {
-            if( isRGB ) {
-                nBits = 24;
-            } else {
-                nBits = 8;
-            }
-        } else if (type.equals("uint16") || type.equals("int16")) {
-            nBits = 16;
-        } else if (type.equals("float32") || type.equals("float64")) {
-            nBits = 32;
-        } else {
-            IJ.error("Type '" + type + "' Not handled yet!");
-        }
-        return nBits;
-    }
-
-    //-----------------------------------------------------------------------------
-    static String dsInfoToTypeString( HDF5DataSetInformation dsInfo) {
+        HDF5DataSetInformation dsInfo = reader.object().getDataSetInformation(dataset);
         HDF5DataTypeInformation dsType = dsInfo.getTypeInformation();
-        String typeText = "";
 
-        if (dsType.isSigned() == false) {
-            typeText += "u";
+        Img<?> img = null;
+        long[] dim = dsInfo.getDimensions();
+
+        // HDF5 array's dimensions are reversed
+        for(int i = 0; i < dim.length / 2; i++)
+        {
+            long temp = dim[i];
+            dim[i] = dim[dim.length - i - 1];
+            dim[dim.length - i - 1] = temp;
         }
 
-        switch( dsType.getDataClass())
+        switch(dsType.getDataClass())
         {
             case INTEGER:
-                typeText += "int" + 8*dsType.getElementSize();
+                img = createIntegerImage(reader, dataset, dim, dsType);
                 break;
             case FLOAT:
-                typeText += "float" + 8*dsType.getElementSize();
+                img = createFloatImage(reader, dataset, dim, dsType);
                 break;
-            default:
-                typeText += dsInfo.toString();
         }
-        return typeText;
+
+        return img;
+    }
+
+    private Img<?> createIntegerImage(IHDF5Reader reader, String dataset, long[] dimensions, HDF5DataTypeInformation dsType)
+    {
+        Img<?> img = null;
+        int bits = dsType.getElementSize() * 8;
+        boolean signed = dsType.isSigned();
+
+        switch(bits)
+        {
+            case 8:
+                ByteArray byteData = new ByteArray(reader.int8().readArray(dataset));
+                if (signed) {
+                    ArrayImg<ByteType, ByteArray> byteImg = new ArrayImg<>(byteData, dimensions, new Fraction());
+                    byteImg.setLinkedType(new ByteType(byteImg));
+                    img = byteImg;
+                } else {
+                    ArrayImg<UnsignedByteType, ByteArray> ubyteImg = new ArrayImg<>(byteData, dimensions, new Fraction());
+                    ubyteImg.setLinkedType(new UnsignedByteType(ubyteImg));
+                    img = ubyteImg;
+                }
+                break;
+            case 16:
+                ShortArray shortData = new ShortArray(reader.int16().readArray(dataset));
+                if (signed) {
+                    ArrayImg<ShortType, ShortArray> shortImg = new ArrayImg<>(shortData, dimensions, new Fraction());
+                    shortImg.setLinkedType(new ShortType(shortImg));
+                    img = shortImg;
+                } else {
+                    ArrayImg<UnsignedShortType, ShortArray> ushortImg = new ArrayImg<>(shortData, dimensions, new Fraction());
+                    ushortImg.setLinkedType(new UnsignedShortType(ushortImg));
+                    img = ushortImg;
+                }
+                break;
+            case 32:
+                IntArray intData = new IntArray(reader.int32().readArray(dataset));
+                if (signed) {
+                    ArrayImg<IntType, IntArray> intImg = new ArrayImg<>(intData, dimensions, new Fraction());
+                    intImg.setLinkedType(new IntType(intImg));
+                    img = intImg;
+                } else {
+                    ArrayImg<UnsignedIntType, IntArray> uintImg = new ArrayImg<>(intData, dimensions, new Fraction());
+                    uintImg.setLinkedType(new UnsignedIntType(uintImg));
+                    img = uintImg;
+                }
+                break;
+            case 64:
+                LongArray longData = new LongArray(reader.int64().readArray(dataset));
+                if (signed) {
+                    ArrayImg<LongType, LongArray> longImg = new ArrayImg<>(longData, dimensions, new Fraction());
+                    longImg.setLinkedType(new LongType(longImg));
+                    img = longImg;
+                } else {
+                    ArrayImg<UnsignedLongType, LongArray> ulongImg = new ArrayImg<>(longData, dimensions, new Fraction());
+                    ulongImg.setLinkedType(new UnsignedLongType(ulongImg));
+                    img = ulongImg;
+                }
+                break;
+        }
+
+        return img;
+    }
+
+    private Img<?> createFloatImage(IHDF5Reader reader, String dataset, long[] dimensions, HDF5DataTypeInformation dsType)
+    {
+        Img<?> img = null;
+        int bits = dsType.getElementSize() * 8;
+
+        switch(bits)
+        {
+            case 32:
+                FloatArray floatData = new FloatArray(reader.float32().readArray(dataset));
+                ArrayImg<FloatType, FloatArray> floatImg = new ArrayImg<>(floatData, dimensions, new Fraction());
+                floatImg.setLinkedType(new FloatType(floatImg));
+                img = floatImg;
+                break;
+            case 64:
+                DoubleArray doubleData = new DoubleArray(reader.float64().readArray(dataset));
+                ArrayImg<DoubleType, DoubleArray> doubleImg = new ArrayImg<>(doubleData, dimensions, new Fraction());
+                doubleImg.setLinkedType(new DoubleType(doubleImg));
+                img = doubleImg;
+                break;
+        }
+
+        return img;
+    }
+
+    /**
+     * This main function serves for development purposes.
+     * It allows you to run the plugin immediately out of
+     * your integrated development environment (IDE).
+     *
+     * @param args whatever, it's ignored
+     * @throws Exception
+     */
+    public static void main(final String... args) throws Exception {
+        final ImageJ ij = new ImageJ();
+        ij.ui().showUI();
+
+        final File file = ij.ui().chooseFile(null, "open");
+
+        if (file != null) {
+
+            final HDF5ImageJ2 hdf5s = ij.get(HDF5ImageJ2.class);
+            Dataset dataset = hdf5s.read(file.getPath(), "/raw/fused/channel1");
+
+            ij.ui().show(dataset);
+        }
     }
 }
