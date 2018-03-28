@@ -33,6 +33,8 @@ import net.imagej.Dataset;
 import net.imagej.DatasetService;
 import net.imagej.ImageJ;
 import net.imagej.ImageJService;
+import net.imagej.axis.Axis;
+import net.imagej.axis.DefaultLinearAxis;
 import net.imglib2.img.Img;
 import net.imglib2.img.array.ArrayImg;
 import net.imglib2.img.basictypeaccess.array.*;
@@ -91,6 +93,12 @@ public class HDF5ImageJ2 extends AbstractService implements ImageJService {
         reader.close();
 
         Dataset ds = datasetService.create(img);
+
+        Axis[] axes = new Axis[ds.numDimensions()];
+
+        for (int i = 0; i < ds.numDimensions(); i++ ) {
+            axes[i] = new DefaultLinearAxis(element_size_um[i]);
+        }
 
         return ds;
     }
@@ -221,6 +229,7 @@ public class HDF5ImageJ2 extends AbstractService implements ImageJService {
         final ImageJ ij = new ImageJ();
         ij.ui().showUI();
 
+        /*
         final File file = ij.ui().chooseFile(null, "open");
 
         if (file != null) {
@@ -230,5 +239,6 @@ public class HDF5ImageJ2 extends AbstractService implements ImageJService {
 
             ij.ui().show(dataset);
         }
+        */
     }
 }

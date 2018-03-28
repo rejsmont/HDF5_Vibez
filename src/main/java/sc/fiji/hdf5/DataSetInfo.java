@@ -1,57 +1,83 @@
 package sc.fiji.hdf5;
 
-import ij.IJ;
-
 import java.util.Comparator;
 
 class DataSetInfo
 {
     static class DataSetInfoComparator implements Comparator<DataSetInfo> {
         public int compare(DataSetInfo a, DataSetInfo b) {
-            return a.numericSortablePath.compareTo( b.numericSortablePath);
+            return a.numericPath.compareTo(b.numericPath);
         }
     }
 
-    public String path;
-    public String numericSortablePath;
-    public String dimText;
-    public String typeText;
-    public String element_size_um_text;
-    final int numPaddingSize = 10;
+    private String path;
+    private String numericPath;
+    private String dimensions;
+    private String type;
+    private String voxelSize;
+    private String axisOrder;
+    private final int numPaddingSize = 10;
 
     public DataSetInfo( String p, String d, String t, String e) {
-        setPath(p);
-        dimText = d;
-        typeText = t;
-        element_size_um_text = e;
+        this(p, d, t, e, "zyxct");
     }
 
-    public void setPath( String p) {
+    public DataSetInfo(String p, String d, String t, String e, String o) {
+        setPath(p);
+        dimensions = d;
+        type = t;
+        voxelSize = e;
+        axisOrder = o;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public String getDimensions() {
+        return dimensions;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public String getVoxelSize() {
+        return voxelSize;
+    }
+
+    public String getAxisOrder() {
+        return axisOrder;
+    }
+
+    private void setPath(String p) {
         path = p;
-        numericSortablePath = "";
-        String num = "";
-        for( int i = 0; i < p.length(); ++i) {
+        StringBuilder numPath = new StringBuilder("");
+        StringBuilder num = new StringBuilder("");
+
+        for(int i = 0; i < p.length(); ++i) {
             if (isNum(p.charAt(i))) {
-                num += p.charAt(i);
+                num.append(p.charAt(i));
             } else {
-                if (num != "") {
+                if (! num.toString().equals("")) {
                     for (int j = 0; j < numPaddingSize - num.length(); ++j) {
-                        numericSortablePath += "0";
+                        numPath.append("0");
                     }
-                    numericSortablePath += num;
-                    num = "";
+                    numPath.append(num);
+                    num = new StringBuilder("");
                 }
-                numericSortablePath += p.charAt(i);
+                numPath.append(p.charAt(i));
             }
         }
-        if (num != "") {
+
+        if (! num.toString().equals("")) {
             for (int j = 0; j < numPaddingSize - num.length(); ++j) {
-                numericSortablePath += "0";
+                numPath.append("0");
             }
-            numericSortablePath += num;
+            numPath.append(num);
         }
-        IJ.log( path);
-        IJ.log( numericSortablePath);
+
+        numericPath = numPath.toString();
     }
 
     public static Comparator<DataSetInfo> createComparator()
@@ -59,7 +85,8 @@ class DataSetInfo
         return new DataSetInfoComparator();
     }
 
-    private boolean isNum( char c) {
+    private boolean isNum(char c)
+    {
         return c >= '0' && c <= '9';
     }
 }

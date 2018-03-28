@@ -27,54 +27,27 @@
 
 package sc.fiji.hdf5;
 
-import ij.CompositeImage;
 import ij.IJ;
-import ij.ImagePlus;
-import ij.ImageStack;
 import ij.Prefs;
-import ij.gui.GenericDialog;
 import ij.io.OpenDialog;
 import ij.plugin.PlugIn;
-import ij.process.ColorProcessor;
-import ij.process.ImageProcessor;
-import ij.process.ShortProcessor;
-import ij.process.ImageStatistics;
-import ij.process.StackStatistics;
-import ij.measure.Measurements;
 
 import java.io.File;
-import java.util.Date;
-import java.util.List;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Vector;
 
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 import javax.swing.*;
-import javax.swing.tree.*;
 import javax.swing.JTable;
-import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.JCheckBox;
 
-
-import ch.systemsx.cisd.hdf5.HDF5DataSetInformation;
-import ch.systemsx.cisd.hdf5.HDF5DataTypeInformation;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5LinkInformation;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
-import ch.systemsx.cisd.hdf5.IHDF5Writer;
-import ch.systemsx.cisd.hdf5.IHDF5ReaderConfigurator;
-import ch.systemsx.cisd.base.mdarray.MDByteArray;
-import ch.systemsx.cisd.base.mdarray.MDFloatArray;
-import ch.systemsx.cisd.base.mdarray.MDShortArray;
-import ncsa.hdf.hdf5lib.exceptions.HDF5Exception; 
-
 
 
 public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener 
@@ -147,7 +120,7 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
     IJ.log( "ALL DATASETS:");
     for (DataSetInfo info : dataSets_)
     {
-      IJ.log(info.path + " (" + info.dimText + " " + info.typeText + ")");
+      IJ.log(info.getPath() + " (" + info.getDimensions() + " " + info.getType() + ")");
     }
 
 
@@ -156,10 +129,10 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
     Vector<Vector> tableData = new Vector<Vector>();
     for (int row = 0; row < dataSets_.size(); ++row) {
       Vector<String> line = new Vector<String>();
-      line.addElement("<html>"+dataSets_.get(row).path.replace("/", "<font color='red'><strong>/</strong></font>")+"</html>");
-      line.addElement("<html>"+dataSets_.get(row).dimText.replace("x", "<font color='red'>&times;</font>")+"</html>");
-      line.addElement(dataSets_.get(row).typeText);
-      line.addElement("<html>"+dataSets_.get(row).element_size_um_text.replace("x", "<font color='red'>&times;</font>")+"</html>");
+      line.addElement("<html>"+dataSets_.get(row).getPath().replace("/", "<font color='red'><strong>/</strong></font>")+"</html>");
+      line.addElement("<html>"+dataSets_.get(row).getDimensions().replace("x", "<font color='red'>&times;</font>")+"</html>");
+      line.addElement(dataSets_.get(row).getType());
+      line.addElement("<html>"+dataSets_.get(row).getVoxelSize().replace("x", "<font color='red'>&times;</font>")+"</html>");
       tableData.addElement( line);
     }
     
@@ -395,10 +368,10 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
       // load as multiple standard stacks
       
       for (int i : selection) {
-        IJ.log( "i = " + i + dataSets_.get(i).path);
+        IJ.log( "i = " + i + dataSets_.get(i).getPath());
         String[] dsetNames = new String[1];
-        dsetNames[0] = dataSets_.get(i).path;
-        String type = dataSets_.get(i).typeText;
+        dsetNames[0] = dataSets_.get(i).getPath();
+        String type = dataSets_.get(i).getType();
         HDF5ImageJ.loadDataSetsToHyperStack( fullFileName_, dsetNames, 1, 1);
       }
     }
@@ -407,11 +380,11 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
       // load as multiple hyper stacks with custom layout
       
       for (int i : selection) {
-        IJ.log( "i = " + i + dataSets_.get(i).path);
+        IJ.log( "i = " + i + dataSets_.get(i).getPath());
         String dsetLayout =  dsetLayoutTextField_.getText();
         Prefs.set("hdf5readervibez.dsetLayout", dsetLayout);
        
-        HDF5ImageJ.loadCustomLayoutDataSetToHyperStack( fullFileName_, dataSets_.get(i).path, 
+        HDF5ImageJ.loadCustomLayoutDataSetToHyperStack( fullFileName_, dataSets_.get(i).getPath(),
                                                         dsetLayout);
       }
       
@@ -421,7 +394,7 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
       // load as Hyperstack
       String[] dsetNames = new String[selection.length];
       for( int i = 0; i < selection.length; ++i) {
-        dsetNames[i] = dataSets_.get(selection[i]).path;
+        dsetNames[i] = dataSets_.get(selection[i]).getPath();
       }
       int nChannels = 1;
       if( loadAsMode == 2) nChannels = selection.length;
@@ -444,7 +417,7 @@ public class HDF5_Reader_Vibez extends JFrame  implements PlugIn, ActionListener
       }
       Prefs.set("hdf5readervibez.dsetnames",commaSeparatedDsetNames);
       
-      String type = dataSets_.get(selection[0]).typeText;
+      String type = dataSets_.get(selection[0]).getType();
       HDF5ImageJ.loadDataSetsToHyperStack( fullFileName_, dsetNames, 
                                           nFrames, nChannels);
       
