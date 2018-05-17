@@ -13,9 +13,15 @@ import java.util.*;
 import io.scif.util.FormatTools;
 import ncsa.hdf.hdf5lib.exceptions.HDF5Exception;
 
+import net.imagej.ImageJ;
 import net.imagej.axis.Axes;
 import net.imagej.axis.Axis;
+import net.imagej.axis.AxisType;
 import net.imagej.axis.CalibratedAxis;
+import net.imglib2.FinalInterval;
+import net.imglib2.Interval;
+import net.imglib2.img.Img;
+import net.imglib2.img.array.ArrayImg;
 import org.scijava.plugin.Plugin;
 import org.scijava.util.ArrayUtils;
 
@@ -124,11 +130,11 @@ public class HDF5Format extends AbstractFormat {
                             break;
                         case 'c':
                             iMeta.addAxis(Axes.CHANNEL, Long.parseLong(axisLengths[a]));
-                            System.out.printf("Adding axis %d: x axis, %s channels.\n", a, axisLengths[a]);
+                            System.out.printf("Adding axis %d: channel axis, %s channels.\n", a, axisLengths[a]);
                             break;
                     }
                 }
-                //iMeta.setPlanarAxisCount(2);
+                iMeta.setPlanarAxisCount(2);
             }
         }
     }
@@ -230,8 +236,9 @@ public class HDF5Format extends AbstractFormat {
             }
             else
             {
-                dimensions.append(dsInfo.getDimensions()[dsInfo.getRank() - 1]);
-                for( int i = dsInfo.getRank() - 2; i >= 0; --i) {
+                int rank = dsInfo.getRank();
+                dimensions.append(dsInfo.getDimensions()[rank - 1]);
+                for( int i = rank - 2; i >= 0; --i) {
                     dimensions.append("x").append(dsInfo.getDimensions()[i]);
                 }
             }

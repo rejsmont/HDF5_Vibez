@@ -2,7 +2,7 @@ package sc.fiji.hdf5;
 
 import java.util.Comparator;
 
-class DataSetInfo
+public class DataSetInfo
 {
     static class DataSetInfoComparator implements Comparator<DataSetInfo> {
         public int compare(DataSetInfo a, DataSetInfo b) {
